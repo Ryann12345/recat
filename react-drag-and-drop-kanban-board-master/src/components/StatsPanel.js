@@ -41,22 +41,26 @@ class StatsPanel extends Component {
             </div>
 
             <div className="stat-card">
-              <div className="stat-icon completed">
-                <FontAwesomeIcon icon={faCheckCircle} />
-              </div>
-              <div className="stat-info">
-                <span className="stat-value">{stats.completedCards}</span>
-                <span className="stat-label">已完成</span>
+              <div className="stat-card completed">
+                <div className="stat-icon">
+                  <FontAwesomeIcon icon={faCheckCircle} />
+                </div>
+                <div className="stat-info">
+                  <span className="stat-value">{stats.completedCards}</span>
+                  <span className="stat-label">已完成</span>
+                </div>
               </div>
             </div>
 
             <div className="stat-card">
-              <div className="stat-icon overdue">
-                <FontAwesomeIcon icon={faExclamationTriangle} />
-              </div>
-              <div className="stat-info">
-                <span className="stat-value">{stats.overdueCards}</span>
-                <span className="stat-label">已逾期</span>
+              <div className="stat-card overdue">
+                <div className="stat-icon">
+                  <FontAwesomeIcon icon={faExclamationTriangle} />
+                </div>
+                <div className="stat-info">
+                  <span className="stat-value">{stats.overdueCards}</span>
+                  <span className="stat-label">已逾期</span>
+                </div>
               </div>
             </div>
           </div>

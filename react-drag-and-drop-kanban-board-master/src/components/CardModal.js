@@ -1,4 +1,4 @@
-import React, { Component } from "react";
+import React, { Component, createRef } from "react";
 import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import {
   faTimes,
@@ -26,45 +26,60 @@ class CardModal extends Component {
       newSubtaskTitle: "",
       newComment: "",
     };
+    this.labelPickerRef = createRef();
+    this.userPickerRef = createRef();
+    this.priorityPickerRef = createRef();
   }
 
   componentDidMount() {
     document.addEventListener("keydown", this.handleKeyDown);
+    document.addEventListener("mousedown", this.handleClickOutside);
   }
 
   componentWillUnmount() {
     document.removeEventListener("keydown", this.handleKeyDown);
+    document.removeEventListener("mousedown", this.handleClickOutside);
   }
 
-  closeAllPickers = () => {
-    this.setState({
-      showLabelPicker: false,
-      showUserPicker: false,
-      showPriorityPicker: false,
-    });
+  handleClickOutside = (event) => {
+    if (
+      this.labelPickerRef.current &&
+      !this.labelPickerRef.current.contains(event.target) &&
+      this.state.showLabelPicker
+    ) {
+      this.setState({ showLabelPicker: false });
+    }
+    if (
+      this.userPickerRef.current &&
+      !this.userPickerRef.current.contains(event.target) &&
+      this.state.showUserPicker
+    ) {
+      this.setState({ showUserPicker: false });
+    }
+    if (
+      this.priorityPickerRef.current &&
+      !this.priorityPickerRef.current.contains(event.target) &&
+      this.state.showPriorityPicker
+    ) {
+      this.setState({ showPriorityPicker: false });
+    }
   };
 
   handleKeyDown = (e) => {
     if (e.key === "Escape") {
-      const {
-        showLabelPicker,
-        showUserPicker,
-        showPriorityPicker,
-      } = this.state;
-      if (showLabelPicker || showUserPicker || showPriorityPicker) {
-        this.closeAllPickers();
+      if (
+        this.state.showLabelPicker ||
+        this.state.showUserPicker ||
+        this.state.showPriorityPicker
+      ) {
+        this.setState({
+          showLabelPicker: false,
+          showUserPicker: false,
+          showPriorityPicker: false,
+        });
       } else {
         this.saveAndClose();
       }
-    }
-  };
-
-  handleOverlayClick = () => {
-    const { showLabelPicker, showUserPicker, showPriorityPicker } = this.state;
-    if (showLabelPicker || showUserPicker || showPriorityPicker) {
-      this.closeAllPickers();
-    } else {
-      this.saveAndClose();
     }
   };
 
@@ -76,14 +91,9 @@ class CardModal extends Component {
   };
 
   updateCard = (updates) => {
-    this.setState(
-      (prev) => ({
-        card: { ...prev.card, ...updates },
-      }),
-      () => {
-        this.props.onUpdate(this.state.card);
-      }
-    );
+    const updatedCard = { ...this.state.card, ...updates };
+    this.setState({ card: updatedCard });
+    this.props.onUpdate(updatedCard);
   };
 
   toggleTag = (tagId) => {
@@ -174,6 +184,14 @@ class CardModal extends Component {
       .filter(Boolean);
   };
 
+  closeAllPickers = () => {
+    this.setState({
+      showLabelPicker: false,
+      showUserPicker: false,
+      showPriorityPicker: false,
+    });
+  };
+
   render() {
     const {
       card,
@@ -195,7 +213,7 @@ class CardModal extends Component {
     const totalSubtasks = (card.subtasks || []).length;
 
     return (
-      <div className="modal-overlay" onClick={this.handleOverlayClick}>
+      <div className="modal-overlay" onClick={this.saveAndClose}>
         <div className="card-modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <div className="modal-title-row">
@@ -241,11 +259,15 @@ class CardModal extends Component {
                     <span className="no-tags">无标签</span>
                   )}
                 </div>
-                <div className="picker-wrapper">
+                <div className="picker-wrapper" ref={this.labelPickerRef}>
                   <button
                     className="picker-toggle"
                     onClick={() =>
-                      this.setState({ showLabelPicker: !showLabelPicker })
+                      this.setState({
+                        showLabelPicker: !showLabelPicker,
+                        showUserPicker: false,
+                        showPriorityPicker: false,
+                      })
                     }
                   >
                     选择标签
@@ -276,6 +298,9 @@ class CardModal extends Component {
                             style={{ backgroundColor: tag.color }}
                           />
                           <span>{tag.name}</span>
+                          {card.tags?.includes(tag.id) && (
+                            <span className="picker-check">✓</span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -311,11 +336,15 @@ class CardModal extends Component {
                     <span className="no-assignee">未分配</span>
                   )}
                 </div>
-                <div className="picker-wrapper">
+                <div className="picker-wrapper" ref={this.userPickerRef}>
                   <button
                     className="picker-toggle"
                     onClick={() =>
-                      this.setState({ showUserPicker: !showUserPicker })
+                      this.setState({
+                        showUserPicker: !showUserPicker,
+                        showLabelPicker: false,
+                        showPriorityPicker: false,
+                      })
                     }
                   >
                     选择负责人
@@ -333,6 +362,20 @@ class CardModal extends Component {
                           <FontAwesomeIcon icon={faTimes} />
                         </button>
                       </div>
+                      <button
+                        className={`picker-item ${
+                          card.assignee === null ? "selected" : ""
+                        }`}
+                        onClick={() => this.setAssignee(null)}
+                      >
+                        <span
+                          className="picker-avatar"
+                          style={{ backgroundColor: "#d9d9d9" }}
+                        >
+                          ×
+                        </span>
+                        <span>无负责人</span>
+                      </button>
                       {users.map((user) => (
                         <button
                           key={user.id}
@@ -348,6 +391,9 @@ class CardModal extends Component {
                             {user.avatar}
                           </span>
                           <span>{user.name}</span>
+                          {card.assignee === user.id && (
+                            <span className="picker-check">✓</span>
+                          )}
                         </button>
                       ))}
                     </div>
@@ -372,11 +418,15 @@ class CardModal extends Component {
                 >
                   {priority.label}
                 </span>
-                <div className="picker-wrapper">
+                <div className="picker-wrapper" ref={this.priorityPickerRef}>
                   <button
                     className="picker-toggle"
                     onClick={() =>
-                      this.setState({ showPriorityPicker: !showPriorityPicker })
+                      this.setState({
+                        showPriorityPicker: !showPriorityPicker,
+                        showLabelPicker: false,
+                        showUserPicker: false,
+                      })
                     }
                   >
                     更改优先级
@@ -407,6 +457,9 @@ class CardModal extends Component {
                             style={{ backgroundColor: p.color }}
                           />
                           <span>{p.label}</span>
+                          {card.priority === p.value && (
+                            <span className="picker-check">✓</span>
+                          )}
                         </button>
                       ))}
                     </div>
