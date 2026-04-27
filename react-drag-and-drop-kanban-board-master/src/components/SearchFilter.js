@@ -27,6 +27,7 @@ class SearchFilter extends Component {
   };
 
   clearAllFilters = () => {
+    this.props.onSearchChange("");
     this.props.onFilterChange({
       assignee: null,
       priority: null,

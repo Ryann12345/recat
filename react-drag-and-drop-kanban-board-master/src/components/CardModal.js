@@ -36,8 +36,34 @@ class CardModal extends Component {
     document.removeEventListener("keydown", this.handleKeyDown);
   }
 
+  closeAllPickers = () => {
+    this.setState({
+      showLabelPicker: false,
+      showUserPicker: false,
+      showPriorityPicker: false,
+    });
+  };
+
   handleKeyDown = (e) => {
     if (e.key === "Escape") {
+      const {
+        showLabelPicker,
+        showUserPicker,
+        showPriorityPicker,
+      } = this.state;
+      if (showLabelPicker || showUserPicker || showPriorityPicker) {
+        this.closeAllPickers();
+      } else {
+        this.saveAndClose();
+      }
+    }
+  };
+
+  handleOverlayClick = () => {
+    const { showLabelPicker, showUserPicker, showPriorityPicker } = this.state;
+    if (showLabelPicker || showUserPicker || showPriorityPicker) {
+      this.closeAllPickers();
+    } else {
       this.saveAndClose();
     }
   };
@@ -50,9 +76,14 @@ class CardModal extends Component {
   };
 
   updateCard = (updates) => {
-    this.setState((prev) => ({
-      card: { ...prev.card, ...updates },
-    }));
+    this.setState(
+      (prev) => ({
+        card: { ...prev.card, ...updates },
+      }),
+      () => {
+        this.props.onUpdate(this.state.card);
+      }
+    );
   };
 
   toggleTag = (tagId) => {
@@ -164,7 +195,7 @@ class CardModal extends Component {
     const totalSubtasks = (card.subtasks || []).length;
 
     return (
-      <div className="modal-overlay" onClick={this.saveAndClose}>
+      <div className="modal-overlay" onClick={this.handleOverlayClick}>
         <div className="card-modal" onClick={(e) => e.stopPropagation()}>
           <div className="modal-header">
             <div className="modal-title-row">
@@ -221,6 +252,17 @@ class CardModal extends Component {
                   </button>
                   {showLabelPicker && (
                     <div className="picker-dropdown">
+                      <div className="picker-header">
+                        <span className="picker-title">选择标签</span>
+                        <button
+                          className="picker-close"
+                          onClick={() =>
+                            this.setState({ showLabelPicker: false })
+                          }
+                        >
+                          <FontAwesomeIcon icon={faTimes} />
+                        </button>
+                      </div>
                       {tags.map((tag) => (
                         <button
                           key={tag.id}
@@ -280,6 +322,17 @@ class CardModal extends Component {
                   </button>
                   {showUserPicker && (
                     <div className="picker-dropdown">
+                      <div className="picker-header">
+                        <span className="picker-title">选择负责人</span>
+                        <button
+                          className="picker-close"
+                          onClick={() =>
+                            this.setState({ showUserPicker: false })
+                          }
+                        >
+                          <FontAwesomeIcon icon={faTimes} />
+                        </button>
+                      </div>
                       {users.map((user) => (
                         <button
                           key={user.id}
@@ -330,6 +383,17 @@ class CardModal extends Component {
                   </button>
                   {showPriorityPicker && (
                     <div className="picker-dropdown">
+                      <div className="picker-header">
+                        <span className="picker-title">选择优先级</span>
+                        <button
+                          className="picker-close"
+                          onClick={() =>
+                            this.setState({ showPriorityPicker: false })
+                          }
+                        >
+                          <FontAwesomeIcon icon={faTimes} />
+                        </button>
+                      </div>
                       {Object.values(PRIORITIES).map((p) => (
                         <button
                           key={p.value}
