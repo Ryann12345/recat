@@ -1,149 +1,512 @@
 import React, { Component } from "react";
-import Column from "./column.js";
-import Card from "./card";
+import { DragDropContext, Droppable, Draggable } from "react-beautiful-dnd";
+import {
+  loadFromStorage,
+  saveToStorage,
+  generateId,
+} from "../utils/localStorage";
+import {
+  DEFAULT_COLUMNS,
+  DEFAULT_CARDS,
+  DEFAULT_USERS,
+  DEFAULT_TAGS,
+  PRIORITIES,
+} from "../utils/constants";
+import { isOverdue } from "../utils/dateUtils";
+import Column from "./column";
+import CardModal from "./CardModal";
+import StatsPanel from "./StatsPanel";
+import SearchFilter from "./SearchFilter";
+import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
+import { faPlus, faSearch } from "@fortawesome/free-solid-svg-icons";
 
 class Board extends Component {
   constructor(props) {
     super(props);
     this.state = {
-      pending: [
-        { id: 1, title: "Add new user type" },
-        { id: 5, title: "Remove header" },
-      ],
-      "in progress": [
-        { id: 2, title: "Improve component" },
-        { id: 6, title: "Change theme" },
-      ],
-      completed: [
-        { id: 3, title: "Set up authentication" },
-        { id: 7, title: "Increase font-size" },
-      ],
-      tested: [
-        { id: 4, title: "Bug fix" },
-        { id: 8, title: "Create test plan" },
-      ],
-      order: ["pending", "in progress", "completed", "tested"],
+      columns: [],
+      cards: {},
+      users: DEFAULT_USERS,
+      tags: DEFAULT_TAGS,
+      columnOrder: [],
+      selectedCard: null,
+      isModalOpen: false,
+      showStats: true,
+      searchQuery: "",
+      filters: {
+        assignee: null,
+        priority: null,
+        tag: null,
+        overdue: false,
+      },
+      editingColumnId: null,
+      editingColumnTitle: "",
+      showDeleteConfirm: null,
     };
-    this.onNavClick = this.onNavClick.bind(this);
-    this.onCardBlur = this.onCardBlur.bind(this);
   }
 
-  onClick = (type) => {
-    var newCard = {};
-    newCard.id = new Date().getTime();
-    this.setState({ [type]: this.state[type].concat(newCard) });
-  };
-
-  onCardBlur = (event, card, parent) => {
-    var idToReplace;
-    card.title = event.target.value;
-    if (!card.title || card.title === "") {
-      this.setState({ [parent]: this.state[parent].pop() });
+  initializeData = () => {
+    const savedData = loadFromStorage();
+    if (savedData && savedData.columns && savedData.columns.length > 0) {
+      return {
+        columns: savedData.columns,
+        cards: savedData.cards || {},
+        users: savedData.users || DEFAULT_USERS,
+        tags: savedData.tags || DEFAULT_TAGS,
+        columnOrder:
+          savedData.columnOrder || savedData.columns.map((col) => col.id),
+      };
     }
 
-    this.state[parent].forEach((item, index) => {
-      if (item.id === card.id) {
-        idToReplace = index;
-      }
-    });
-
-    var cloneState = Object.assign(this.state[parent]);
-    cloneState[idToReplace] = card;
-
-    this.setState({ [parent]: cloneState });
-  };
-
-  onHandleDrop = (e, cardHeader) => {
-    e.preventDefault();
-    e.stopPropagation();
-    var data = JSON.parse(e.dataTransfer.getData("text"));
-    console.log("dropped", data, cardHeader);
-    if (data.previousParent !== cardHeader) {
-      //Prevent cards from being duplicated in a column
-      this.setState({
-        [data.previousParent]: this.state[data.previousParent].filter(
-          (item) => item.id !== data.id
-        ),
-      });
-      this.setState({ [cardHeader]: this.state[cardHeader].concat(data) });
-    }
-  };
-
-  onNavClick = (event, card, parentCategory) => {
-    var columns = this.state.order;
-    console.log(event.currentTarget.classList);
-    for (let i = 0; i < columns.length; i++) {
-      //loop through parent columns
-      var currentColumn = columns[i];
-      let filteredColumn = this.state[currentColumn].filter(
-        (item) => item.title !== card.title
-      );
-      if (currentColumn === parentCategory) {
-        //if current column is same as current card's parent
-        if (event.currentTarget.classList.contains("leftNav")) {
-          var previous = columns[i - 1]; //find the previous column
-          this.setState({ [previous]: this.state[previous].concat(card) }); //update previous column state
-          this.setState({ [currentColumn]: filteredColumn }); //remove card from current column state
-        } else if (event.currentTarget.classList.contains("rightNav")) {
-          var next = columns[i + 1]; //find the next column
-          this.setState({ [next]: this.state[next].concat(card) }); //update next column state
-          this.setState({ [currentColumn]: filteredColumn }); //remove card from current column state
-        }
-      }
-    }
+    return {
+      columns: DEFAULT_COLUMNS,
+      cards: DEFAULT_CARDS,
+      users: DEFAULT_USERS,
+      tags: DEFAULT_TAGS,
+      columnOrder: DEFAULT_COLUMNS.map((col) => col.id),
+    };
   };
 
   componentDidMount() {
-    this.localState = JSON.parse(localStorage.getItem("state"));
-    this.setState({ ...this.localState }); //update app state from localStorage
+    const initialData = this.initializeData();
+    this.setState({
+      columns: initialData.columns,
+      cards: initialData.cards,
+      users: initialData.users,
+      tags: initialData.tags,
+      columnOrder: initialData.columnOrder,
+    });
   }
 
-  componentDidUpdate() {
-    var stringState = JSON.stringify(this.state);
-    localStorage.setItem("state", stringState); //state app state
+  componentDidUpdate(prevProps, prevState) {
+    const { columns, cards, users, tags, columnOrder } = this.state;
+    if (
+      prevState.columns !== columns ||
+      prevState.cards !== cards ||
+      prevState.users !== users ||
+      prevState.tags !== tags ||
+      prevState.columnOrder !== columnOrder
+    ) {
+      saveToStorage({ columns, cards, users, tags, columnOrder });
+    }
   }
+
+  onDragEnd = (result) => {
+    const { destination, source, draggableId, type } = result;
+
+    if (!destination) return;
+
+    if (
+      destination.droppableId === source.droppableId &&
+      destination.index === source.index
+    ) {
+      return;
+    }
+
+    if (type === "column") {
+      const newColumnOrder = Array.from(this.state.columnOrder);
+      newColumnOrder.splice(source.index, 1);
+      newColumnOrder.splice(destination.index, 0, draggableId);
+      this.setState({ columnOrder: newColumnOrder });
+      return;
+    }
+
+    const startColumn = this.state.columns.find(
+      (col) => col.id === source.droppableId
+    );
+    const endColumn = this.state.columns.find(
+      (col) => col.id === destination.droppableId
+    );
+
+    if (!startColumn || !endColumn) return;
+
+    if (startColumn.id === endColumn.id) {
+      const newCardIds = Array.from(startColumn.cardIds);
+      newCardIds.splice(source.index, 1);
+      newCardIds.splice(destination.index, 0, draggableId);
+
+      const newColumn = { ...startColumn, cardIds: newCardIds };
+      this.setState((prev) => ({
+        columns: prev.columns.map((col) =>
+          col.id === newColumn.id ? newColumn : col
+        ),
+      }));
+    } else {
+      const startCardIds = Array.from(startColumn.cardIds);
+      startCardIds.splice(source.index, 1);
+      const newStartColumn = { ...startColumn, cardIds: startCardIds };
+
+      const endCardIds = Array.from(endColumn.cardIds);
+      endCardIds.splice(destination.index, 0, draggableId);
+      const newEndColumn = { ...endColumn, cardIds: endCardIds };
+
+      this.setState((prev) => ({
+        columns: prev.columns.map((col) => {
+          if (col.id === newStartColumn.id) return newStartColumn;
+          if (col.id === newEndColumn.id) return newEndColumn;
+          return col;
+        }),
+      }));
+    }
+  };
+
+  addColumn = () => {
+    const newColumn = {
+      id: `column-${generateId()}`,
+      title: "新列表",
+      cardIds: [],
+    };
+    this.setState((prev) => ({
+      columns: [...prev.columns, newColumn],
+      columnOrder: [...prev.columnOrder, newColumn.id],
+      editingColumnId: newColumn.id,
+      editingColumnTitle: "新列表",
+    }));
+  };
+
+  deleteColumn = (columnId) => {
+    const column = this.state.columns.find((col) => col.id === columnId);
+    if (!column) return;
+
+    const newCards = { ...this.state.cards };
+    column.cardIds.forEach((cardId) => {
+      delete newCards[cardId];
+    });
+
+    this.setState((prev) => ({
+      columns: prev.columns.filter((col) => col.id !== columnId),
+      columnOrder: prev.columnOrder.filter((id) => id !== columnId),
+      cards: newCards,
+      showDeleteConfirm: null,
+    }));
+  };
+
+  updateColumnTitle = (columnId, newTitle) => {
+    if (!newTitle.trim()) return;
+    this.setState((prev) => ({
+      columns: prev.columns.map((col) =>
+        col.id === columnId ? { ...col, title: newTitle.trim() } : col
+      ),
+      editingColumnId: null,
+    }));
+  };
+
+  addCard = (columnId) => {
+    const newCard = {
+      id: `card-${generateId()}`,
+      title: "",
+      description: "",
+      assignee: null,
+      priority: "medium",
+      dueDate: null,
+      tags: [],
+      subtasks: [],
+      comments: [],
+      createdAt: Date.now(),
+    };
+
+    this.setState((prev) => ({
+      cards: { ...prev.cards, [newCard.id]: newCard },
+      columns: prev.columns.map((col) =>
+        col.id === columnId
+          ? { ...col, cardIds: [...col.cardIds, newCard.id] }
+          : col
+      ),
+      selectedCard: newCard,
+      isModalOpen: true,
+    }));
+  };
+
+  updateCard = (updatedCard) => {
+    this.setState((prev) => ({
+      cards: { ...prev.cards, [updatedCard.id]: updatedCard },
+      selectedCard: updatedCard,
+    }));
+  };
+
+  deleteCard = (cardId, columnId) => {
+    this.setState((prev) => {
+      const newCards = { ...prev.cards };
+      delete newCards[cardId];
+      return {
+        cards: newCards,
+        columns: prev.columns.map((col) =>
+          col.id === columnId
+            ? { ...col, cardIds: col.cardIds.filter((id) => id !== cardId) }
+            : col
+        ),
+        isModalOpen: false,
+        selectedCard: null,
+      };
+    });
+  };
+
+  openCardModal = (card) => {
+    this.setState({ selectedCard: card, isModalOpen: true });
+  };
+
+  closeCardModal = () => {
+    this.setState({ isModalOpen: false, selectedCard: null });
+  };
+
+  getFilteredCards = (columnCardIds) => {
+    const { searchQuery, filters } = this.state;
+    const { cards } = this.state;
+
+    return columnCardIds.filter((cardId) => {
+      const card = cards[cardId];
+      if (!card) return false;
+
+      if (searchQuery) {
+        const query = searchQuery.toLowerCase();
+        const matchesSearch =
+          card.title.toLowerCase().includes(query) ||
+          (card.description && card.description.toLowerCase().includes(query));
+        if (!matchesSearch) return false;
+      }
+
+      if (filters.assignee && card.assignee !== filters.assignee) {
+        return false;
+      }
+
+      if (filters.priority && card.priority !== filters.priority) {
+        return false;
+      }
+
+      if (filters.tag && !card.tags.includes(filters.tag)) {
+        return false;
+      }
+
+      if (filters.overdue && !isOverdue(card.dueDate)) {
+        return false;
+      }
+
+      return true;
+    });
+  };
+
+  getStats = () => {
+    const { columns, cards } = this.state;
+    const totalCards = Object.keys(cards).length;
+    const completedColumn = columns.find((col) => col.title === "已完成");
+    const completedCards = completedColumn ? completedColumn.cardIds.length : 0;
+    const overdueCards = Object.values(cards).filter((card) =>
+      isOverdue(card.dueDate)
+    ).length;
+
+    return {
+      totalCards,
+      completedCards,
+      overdueCards,
+      completionRate:
+        totalCards > 0 ? Math.round((completedCards / totalCards) * 100) : 0,
+      columns: columns.map((col) => ({
+        id: col.id,
+        title: col.title,
+        count: col.cardIds.length,
+      })),
+    };
+  };
 
   render() {
+    const {
+      columns,
+      cards,
+      users,
+      tags,
+      columnOrder,
+      selectedCard,
+      isModalOpen,
+      showStats,
+      searchQuery,
+      filters,
+      editingColumnId,
+      editingColumnTitle,
+      showDeleteConfirm,
+    } = this.state;
+    const stats = this.getStats();
+
     return (
-      <div className="board">
-        <Column
-          onHandleDrop={this.onHandleDrop}
-          onNavClick={this.onNavClick}
-          orientation={"left"}
-          cards={this.state.pending}
-          onClick={() => this.onClick(this.state.order[0])}
-          onCardBlur={this.onCardBlur}
-          cardHeader={"dark"}
-          name={this.state.order[0]}
-        ></Column>
-        <Column
-          onHandleDrop={this.onHandleDrop}
-          onNavClick={this.onNavClick}
-          cards={this.state["in progress"]}
-          onClick={() => this.onClick(this.state.order[1])}
-          onCardBlur={this.onCardBlur}
-          cardHeader={"dark"}
-          name={this.state.order[1]}
-        ></Column>
-        <Column
-          onHandleDrop={this.onHandleDrop}
-          onNavClick={this.onNavClick}
-          cards={this.state.completed}
-          onClick={() => this.onClick(this.state.order[2])}
-          onCardBlur={this.onCardBlur}
-          cardHeader={"dark"}
-          name={this.state.order[2]}
-        ></Column>
-        <Column
-          onHandleDrop={this.onHandleDrop}
-          onNavClick={this.onNavClick}
-          cards={this.state.tested}
-          onClick={() => this.onClick(this.state.order[3])}
-          onCardBlur={this.onCardBlur}
-          cardHeader={"dark"}
-          name={this.state.order[3]}
-          orientation={"right"}
-        ></Column>
+      <div className="kanban-app">
+        <header className="kanban-header">
+          <div className="header-content">
+            <h1 className="app-title">项目看板</h1>
+            <div className="header-actions">
+              <SearchFilter
+                searchQuery={searchQuery}
+                filters={filters}
+                users={users}
+                tags={tags}
+                onSearchChange={(query) =>
+                  this.setState({ searchQuery: query })
+                }
+                onFilterChange={(newFilters) =>
+                  this.setState({ filters: { ...filters, ...newFilters } })
+                }
+              />
+              <button
+                className="stats-toggle-btn"
+                onClick={() => this.setState({ showStats: !showStats })}
+              >
+                {showStats ? "隐藏统计" : "显示统计"}
+              </button>
+            </div>
+          </div>
+        </header>
+
+        <div className="kanban-main">
+          <div className="board-container">
+            <DragDropContext onDragEnd={this.onDragEnd}>
+              <Droppable
+                droppableId="all-columns"
+                direction="horizontal"
+                type="column"
+              >
+                {(provided) => (
+                  <div
+                    className="board"
+                    {...provided.droppableProps}
+                    ref={provided.innerRef}
+                  >
+                    {columnOrder.map((columnId, index) => {
+                      const column = columns.find((col) => col.id === columnId);
+                      if (!column) return null;
+
+                      const filteredCardIds = this.getFilteredCards(
+                        column.cardIds
+                      );
+
+                      return (
+                        <Draggable
+                          key={column.id}
+                          draggableId={column.id}
+                          index={index}
+                        >
+                          {(provided, snapshot) => (
+                            <div
+                              ref={provided.innerRef}
+                              {...provided.draggableProps}
+                              className={
+                                snapshot.isDragging
+                                  ? "column dragging"
+                                  : "column"
+                              }
+                            >
+                              <Column
+                                column={column}
+                                cards={cards}
+                                users={users}
+                                tags={tags}
+                                filteredCardIds={filteredCardIds}
+                                isEditing={editingColumnId === column.id}
+                                editingTitle={editingColumnTitle}
+                                onEditTitle={(title) =>
+                                  this.setState({ editingColumnTitle: title })
+                                }
+                                onUpdateTitle={() =>
+                                  this.updateColumnTitle(
+                                    column.id,
+                                    editingColumnTitle
+                                  )
+                                }
+                                onStartEdit={() =>
+                                  this.setState({
+                                    editingColumnId: column.id,
+                                    editingColumnTitle: column.title,
+                                  })
+                                }
+                                onCancelEdit={() =>
+                                  this.setState({ editingColumnId: null })
+                                }
+                                onDelete={() =>
+                                  this.setState({
+                                    showDeleteConfirm: {
+                                      type: "column",
+                                      id: column.id,
+                                    },
+                                  })
+                                }
+                                onAddCard={() => this.addCard(column.id)}
+                                onCardClick={(card) => this.openCardModal(card)}
+                                dragHandleProps={provided.dragHandleProps}
+                              />
+                            </div>
+                          )}
+                        </Draggable>
+                      );
+                    })}
+                    {provided.placeholder}
+
+                    <div className="add-column-container">
+                      <button
+                        className="add-column-btn"
+                        onClick={this.addColumn}
+                      >
+                        <FontAwesomeIcon icon={faPlus} />
+                        <span>添加列表</span>
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </Droppable>
+            </DragDropContext>
+          </div>
+
+          {showStats && (
+            <StatsPanel stats={stats} columns={columns} cards={cards} />
+          )}
+        </div>
+
+        {isModalOpen && selectedCard && (
+          <CardModal
+            card={selectedCard}
+            columns={columns}
+            users={users}
+            tags={tags}
+            onClose={this.closeCardModal}
+            onUpdate={this.updateCard}
+            onDelete={(cardId, columnId) => this.deleteCard(cardId, columnId)}
+          />
+        )}
+
+        {showDeleteConfirm && (
+          <div
+            className="modal-overlay"
+            onClick={() => this.setState({ showDeleteConfirm: null })}
+          >
+            <div className="confirm-modal" onClick={(e) => e.stopPropagation()}>
+              <h3>确认删除</h3>
+              <p>
+                {showDeleteConfirm.type === "column"
+                  ? "确定要删除此列表吗？列表中的所有卡片也将被删除。"
+                  : "确定要删除此卡片吗？"}
+              </p>
+              <div className="confirm-actions">
+                <button
+                  className="btn-cancel"
+                  onClick={() => this.setState({ showDeleteConfirm: null })}
+                >
+                  取消
+                </button>
+                <button
+                  className="btn-delete"
+                  onClick={() => {
+                    if (showDeleteConfirm.type === "column") {
+                      this.deleteColumn(showDeleteConfirm.id);
+                    } else {
+                      this.deleteCard(
+                        showDeleteConfirm.id,
+                        showDeleteConfirm.columnId
+                      );
+                    }
+                  }}
+                >
+                  删除
+                </button>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     );
   }

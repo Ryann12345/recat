@@ -3,13 +3,7 @@ import "./App.css";
 import Board from "./components/board.js";
 
 function App() {
-  return (
-    <div className="App">
-      <header className="App-header">
-        <Board />
-      </header>
-    </div>
-  );
+  return <Board />;
 }
 
 export default App;
